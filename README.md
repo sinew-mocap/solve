@@ -1,5 +1,7 @@
 # solve — sinew-mocap
 
+[![CI](https://github.com/sinew-mocap/solve/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/sinew-mocap/solve/actions/workflows/ci.yml)
+
 A hexagon cluster (`core/` + `ports/` + `adapters/`) of the Sinew mocap stack:
 the body solve — FK + linear-blend skinning of the ANNY body (Lean->Slang kernels).
 
