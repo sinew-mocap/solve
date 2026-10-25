@@ -17,13 +17,16 @@ package "SinewSolve" where
 lean_lib SinewSolve where
   srcDir := "."
   globs  := #[Glob.one `Sinew.Math, Glob.one `Sinew.Align, Glob.one `Sinew.Anthropometry,
-              Glob.one `Sinew.RigRest, Glob.submodules `Sinew.SlangCodegen]
+              Glob.one `Sinew.RigRest, Glob.one `Sinew.ImuToBody, Glob.submodules `Sinew.SlangCodegen]
 
 lean_exe align_test where
   root := `AlignTest
 
 lean_exe emit_shaders where
   root := `EmitShaders
+
+lean_exe imu_to_body_test where
+  root := `ImuToBodyTest
 
 -- Property tests over the body-solve spec (build fails on a counterexample).
 lean_exe proptest where

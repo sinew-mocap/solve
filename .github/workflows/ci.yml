@@ -9,7 +9,7 @@ on:
 
 concurrency:
   group: ci-${{ github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   test:
@@ -41,3 +41,25 @@ jobs:
       # cluster ships no unit tests; --no-tests=ignore keeps that from failing.
       - name: Test
         run: ctest --test-dir build -C Release --output-on-failure --no-tests=ignore
+
+  imu-to-body:
+    name: imu_to_body self-test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install numpy
+      - run: python adapters/imu_to_body.py --self-test
+
+  lean-spec:
+    name: lean imu_to_body spec
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: leanprover/lean-action@v1
+        with:
+          lake-package-directory: core/spec
+          build-args: imu_to_body_test
+      - run: cd core/spec && ~/.elan/bin/lake exe imu_to_body_test | tee /dev/stderr | grep -qx OK
