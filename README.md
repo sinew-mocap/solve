@@ -15,3 +15,17 @@ cmake -B build && cmake --build build
 ## Dependencies
 
 See `ports/sibling-repos.txt` — clone the listed `sinew-mocap` repos side-by-side in `~/`.
+
+
+## Vendored solvers
+
+Both come from archived upstreams and are owned here as git subtrees (squashed). This repo is their source of truth; refresh a path only deliberately.
+
+| Path | Source | Ref taken | What it is |
+|---|---|---|---|
+| `core/rotation-star/` | `V-Sekai-archive/contract-rotation-star` | `main` @ `0c3830c` | Rotation solver: Lean spec and proofs, Slang kernels (SPIR-V, C++), C port |
+| `core/lbfgsb/` | `V-Sekai-archive/contract-lbfgsb` | `main` @ `449bb7d` | L-BFGS-B in Lean emitted through Slang to CPU and SPIR-V, with the guest driver; the bounded solver for mesh-surface fits on the GPU |
+
+Probe a link with `git subtree pull --prefix=<path> <source url> main --squash`; it answers `Subtree is already at commit <sha>`.
+
+Check each package: `cd core/rotation-star/lean && lake build && lake exe rotation_star_test`, and `cd core/lbfgsb/lean && lake build`.
