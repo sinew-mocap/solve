@@ -33,13 +33,15 @@ def blendshape (cfg : Config := {}) : String :=
   "[[vk::binding(0, 0)]] StructuredBuffer<float3> templ;   // (P)    template verts\n" ++
   "[[vk::binding(1, 0)]] StructuredBuffer<float3> blend;   // (NB*P) blendshapes, row c*P+p\n" ++
   "[[vk::binding(2, 0)]] StructuredBuffer<float>  coeffs;  // (NB)   phenotype coeffs\n" ++
-  "[[vk::binding(3, 0)]] RWStructuredBuffer<float3> vanny; // (P)    output\n\n" ++
+  "[[vk::binding(3, 0)]] RWStructuredBuffer<float3> vanny; // (P)    output\n" ++
+  "struct BlendshapeParams { uint P; uint NB; };\n" ++
+  "[[vk::binding(4, 0)]] ConstantBuffer<BlendshapeParams> params; // counts, host-written\n\n" ++
   attr cfg "blendshape" ++
   "{\n" ++
   "    uint p = tid.x;\n" ++
-  "    uint P, s; templ.GetDimensions(P, s);\n" ++
+  "    uint P = params.P;\n" ++
+  "    uint NB = params.NB;\n" ++
   "    if (p >= P) return;\n" ++
-  "    uint NB, s2; coeffs.GetDimensions(NB, s2);\n" ++
   "    float3 acc = templ[p];\n" ++
   "    for (uint c = 0; c < NB; ++c)\n" ++
   "    {\n" ++
@@ -55,11 +57,13 @@ def baryTet (cfg : Config := {}) : String :=
   header ++
   "[[vk::binding(0, 0)]] StructuredBuffer<float3> vanny;  // (P)     Anny verts\n" ++
   "[[vk::binding(1, 0)]] StructuredBuffer<uint>   Fsrc;   // (NFS*3) source tri indices\n" ++
-  "[[vk::binding(2, 0)]] RWStructuredBuffer<float3> p3;   // (NFS)   output tip\n\n" ++
+  "[[vk::binding(2, 0)]] RWStructuredBuffer<float3> p3;   // (NFS)   output tip\n" ++
+  "struct BaryTetParams { uint NFS; };\n" ++
+  "[[vk::binding(3, 0)]] ConstantBuffer<BaryTetParams> params; // counts, host-written\n\n" ++
   attr cfg "bary_tet" ++
   "{\n" ++
   "    uint f = tid.x;\n" ++
-  "    uint NFS, s; p3.GetDimensions(NFS, s);\n" ++
+  "    uint NFS = params.NFS;\n" ++
   "    if (f >= NFS) return;\n" ++
   "    float3 a = vanny[Fsrc[f * 3 + 0]];\n" ++
   "    float3 b = vanny[Fsrc[f * 3 + 1]];\n" ++
@@ -76,13 +80,15 @@ def baryGather (cfg : Config := {}) : String :=
   "[[vk::binding(2, 0)]] StructuredBuffer<uint>   Ftet;   // (NFS*4) tet indices into [vanny|p3]\n" ++
   "[[vk::binding(3, 0)]] StructuredBuffer<uint>   fids;   // (V)     source face per vertex\n" ++
   "[[vk::binding(4, 0)]] StructuredBuffer<float>  bary;   // (V*4)   barycentric weights\n" ++
-  "[[vk::binding(5, 0)]] RWStructuredBuffer<float3> v0;   // (V)     output (SOMA frame)\n\n" ++
+  "[[vk::binding(5, 0)]] RWStructuredBuffer<float3> v0;   // (V)     output (SOMA frame)\n" ++
+  "struct BaryGatherParams { uint V; uint P; };\n" ++
+  "[[vk::binding(6, 0)]] ConstantBuffer<BaryGatherParams> params; // counts, host-written\n\n" ++
   attr cfg "bary_gather" ++
   "{\n" ++
   "    uint v = tid.x;\n" ++
-  "    uint V, s; v0.GetDimensions(V, s);\n" ++
+  "    uint V = params.V;\n" ++
   "    if (v >= V) return;\n" ++
-  "    uint P, s2; vanny.GetDimensions(P, s2);\n" ++
+  "    uint P = params.P;\n" ++
   "    uint f = fids[v];\n" ++
   "    float3 r = float3(0.0);\n" ++
   "    for (uint k = 0; k < 4; ++k)\n" ++
@@ -109,7 +115,9 @@ def skeletonFit : String :=
   "[[vk::binding(3, 0)]] StructuredBuffer<float>  jpos;    // (J*3) regressed joint positions\n" ++
   "[[vk::binding(4, 0)]] StructuredBuffer<float>  sw;      // (V*J) skinning weights\n" ++
   "[[vk::binding(5, 0)]] StructuredBuffer<int>    parents; // (J)\n" ++
-  "[[vk::binding(6, 0)]] RWStructuredBuffer<float> outbw;  // (J*16) output bind world\n\n" ++
+  "[[vk::binding(6, 0)]] RWStructuredBuffer<float> outbw;  // (J*16) output bind world\n" ++
+  "struct SkeletonFitParams { uint J; uint V; };\n" ++
+  "[[vk::binding(7, 0)]] ConstantBuffer<SkeletonFitParams> params; // counts, host-written\n\n" ++
   "static const float EPS = 1e-8;\n\n" ++
   "float3 cr(float3 a, float3 b) { return float3(a.y*b.z-a.z*b.y, a.z*b.x-a.x*b.z, a.x*b.y-a.y*b.x); }\n" ++
   "float det9(float m[9]) { return m[0]*(m[4]*m[8]-m[5]*m[7]) - m[1]*(m[3]*m[8]-m[5]*m[6]) + m[2]*(m[3]*m[7]-m[4]*m[6]); }\n" ++
@@ -196,8 +204,8 @@ def skeletonFit : String :=
   "[shader(\"compute\")]\n[numthreads(1, 1, 1)]\n" ++
   "void skeleton_fit(uint3 tid : SV_DispatchThreadID)\n{\n" ++
   "    if (tid.x != 0) return;\n" ++
-  "    uint J, st; parents.GetDimensions(J, st);\n" ++
-  "    uint Vc, st2; v0.GetDimensions(Vc, st2); uint V = Vc/3;\n" ++
+  "    uint J = params.J;\n" ++
+  "    uint V = params.V;\n" ++
   "    for (uint j = 0; j < J; j++) for (int k = 0; k < 9; k++) { int r=k/3, c=k%3; outbw[j*16+r*4+c] = bw[j*16+r*4+c]; }\n" ++
   "    for (uint i = 1; i < J; i++) {\n" ++
   "        int p = parents[i];\n" ++
@@ -238,11 +246,13 @@ def skeletonFit : String :=
 def se3Inverse (cfg : Config := {}) : String :=
   header ++
   "[[vk::binding(0, 0)]] StructuredBuffer<float>  bw;   // (J*16) bind world\n" ++
-  "[[vk::binding(1, 0)]] RWStructuredBuffer<float> inv; // (J*16) inverse-bind\n\n" ++
+  "[[vk::binding(1, 0)]] RWStructuredBuffer<float> inv; // (J*16) inverse-bind\n" ++
+  "struct Se3InverseParams { uint J; };\n" ++
+  "[[vk::binding(2, 0)]] ConstantBuffer<Se3InverseParams> params; // counts, host-written\n\n" ++
   attr cfg "se3_inverse" ++
   "{\n" ++
   "    uint j = tid.x;\n" ++
-  "    uint J, s; inv.GetDimensions(J, s); J /= 16;\n" ++
+  "    uint J = params.J;\n" ++
   "    if (j >= J) return;\n" ++
   "    uint o = j * 16;\n" ++
   "    float t[3] = {bw[o+3], bw[o+7], bw[o+11]};\n" ++
@@ -258,11 +268,13 @@ def rbf (cfg : Config := {}) : String :=
   "[[vk::binding(1, 0)]] StructuredBuffer<uint>   crow;  // (J+1)  CSR row offsets\n" ++
   "[[vk::binding(2, 0)]] StructuredBuffer<uint>   col;   // (NNZ)  CSR columns\n" ++
   "[[vk::binding(3, 0)]] StructuredBuffer<float>  val;   // (NNZ)  CSR values\n" ++
-  "[[vk::binding(4, 0)]] RWStructuredBuffer<float3> jpos; // (J)   output joint positions\n\n" ++
+  "[[vk::binding(4, 0)]] RWStructuredBuffer<float3> jpos; // (J)   output joint positions\n" ++
+  "struct RbfParams { uint J; };\n" ++
+  "[[vk::binding(5, 0)]] ConstantBuffer<RbfParams> params; // counts, host-written\n\n" ++
   attr cfg "rbf" ++
   "{\n" ++
   "    uint i = tid.x;\n" ++
-  "    uint J, s; jpos.GetDimensions(J, s);\n" ++
+  "    uint J = params.J;\n" ++
   "    if (i >= J) return;\n" ++
   "    float3 acc = float3(0.0);\n" ++
   "    for (uint k = crow[i]; k < crow[i + 1]; ++k)\n" ++

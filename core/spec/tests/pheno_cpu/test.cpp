@@ -196,6 +196,8 @@ int main(int argc, char **argv) {
 		gp.coeffs_0.count = PH_NB;
 		gp.vanny_0.data = (Vector<float, 3> *)vanny;
 		gp.vanny_0.count = PH_P;
+		BlendshapeParams_0 prm{ PH_P, PH_NB };
+		gp.params_0 = &prm;
 		ComputeVaryingInput vi = dispatch<ComputeVaryingInput>(PH_P);
 		blendshape(&vi, nullptr, &gp);
 	}
@@ -208,6 +210,8 @@ int main(int argc, char **argv) {
 		gp.Fsrc_0.count = (size_t)PH_NFS * 3;
 		gp.p3_0.data = (Vector<float, 3> *)p3;
 		gp.p3_0.count = PH_NFS;
+		BaryTetParams_0 prm{ PH_NFS };
+		gp.params_0 = &prm;
 		ComputeVaryingInput vi = dispatch<ComputeVaryingInput>(PH_NFS);
 		bary_tet(&vi, nullptr, &gp);
 	}
@@ -226,6 +230,8 @@ int main(int argc, char **argv) {
 		gp.bary_0.count = (size_t)PH_V * 4;
 		gp.v0_0.data = (Vector<float, 3> *)v0;
 		gp.v0_0.count = PH_V;
+		BaryGatherParams_0 prm{ PH_V, PH_P };
+		gp.params_0 = &prm;
 		ComputeVaryingInput vi = dispatch<ComputeVaryingInput>(PH_V);
 		bary_gather(&vi, nullptr, &gp);
 	}
@@ -242,6 +248,8 @@ int main(int argc, char **argv) {
 		gp.val_0.count = PH_NNZ;
 		gp.jpos_0.data = (Vector<float, 3> *)jpos;
 		gp.jpos_0.count = PH_J;
+		RbfParams_0 prm{ PH_J };
+		gp.params_0 = &prm;
 		ComputeVaryingInput vi = dispatch<ComputeVaryingInput>(PH_J);
 		rbf(&vi, nullptr, &gp);
 	}
@@ -262,6 +270,8 @@ int main(int argc, char **argv) {
 		gp.parents_0.count = PH_J;
 		gp.outbw_0.data = outbw;
 		gp.outbw_0.count = (size_t)PH_J * 16;
+		SkeletonFitParams_0 prm{ PH_J, PH_V };
+		gp.params_0 = &prm;
 		ComputeVaryingInput vi = dispatch<ComputeVaryingInput>(1);
 		skeleton_fit(&vi, nullptr, &gp);
 	}

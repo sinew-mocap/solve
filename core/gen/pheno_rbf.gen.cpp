@@ -1,11 +1,17 @@
 #include "slang_rt/slang-cpp-prelude.h"
-
 #ifdef SLANG_PRELUDE_NAMESPACE
 using namespace SLANG_PRELUDE_NAMESPACE;
 #endif
 
 
-#line 6993 "hlsl.meta.slang"
+#line 9 "../spec/slang/pheno_rbf.slang"
+struct RbfParams_0
+{
+    uint32_t J_0;
+};
+
+
+#line 9
 struct GlobalParams_0
 {
     StructuredBuffer<Vector<float, 3> > v0_0;
@@ -13,78 +19,72 @@ struct GlobalParams_0
     StructuredBuffer<uint32_t> col_0;
     StructuredBuffer<float> val_0;
     RWStructuredBuffer<Vector<float, 3> > jpos_0;
+    RbfParams_0* params_0;
 };
 
 
-#line 6993
+#line 9
 struct KernelContext_0
 {
     GlobalParams_0* globalParams_0;
 };
 
-
-#line 12 "E:/sinew-moved/viz_native/../spec/slang/pheno_rbf.slang"
 void _rbf(void* _S1, void* entryPointParams_0, void* globalParams_1)
 {
 
-#line 12
+#line 14
     ComputeThreadVaryingInput * _S2 = (slang_bit_cast<ComputeThreadVaryingInput *>(_S1));
 
-#line 12
+#line 14
     KernelContext_0 kernelContext_0;
 
-#line 12
+#line 14
     (&kernelContext_0)->globalParams_0 = (slang_bit_cast<GlobalParams_0*>(globalParams_1));
 
     uint32_t i_0 = (_S2->groupID * Vector<uint32_t, 3> (64U, 1U, 1U) + _S2->groupThreadID).x;
-    uint _elementCount_0;
-    uint _stride_0;
-    (slang_bit_cast<GlobalParams_0*>(globalParams_1))->jpos_0.GetDimensions(&_elementCount_0, &_stride_0);
-    Vector<uint32_t, 2>  _S3 = uint2(_elementCount_0, _stride_0);
 
-#line 16
-    if(i_0 >= (_S3.x))
-    {
-
-#line 16
-        return;
-    }
-
-#line 17
-    Vector<float, 3>  _S4 = (Vector<float, 3> )0.0f;
-
-#line 17
-    uint32_t k_0 = (&kernelContext_0)->globalParams_0->crow_0.Load(i_0);
-
-#line 17
-    Vector<float, 3>  acc_0 = _S4;
-    for(;;)
+    if(i_0 >= ((slang_bit_cast<GlobalParams_0*>(globalParams_1))->params_0->J_0))
     {
 
 #line 18
+        return;
+    }
+
+#line 19
+    Vector<float, 3>  _S3 = (Vector<float, 3> )0.0f;
+
+#line 19
+    uint32_t k_0 = (&kernelContext_0)->globalParams_0->crow_0.Load(i_0);
+
+#line 19
+    Vector<float, 3>  acc_0 = _S3;
+    for(;;)
+    {
+
+#line 20
         if(k_0 < ((&kernelContext_0)->globalParams_0->crow_0).Load(i_0 + 1U))
         {
         }
         else
         {
 
-#line 18
+#line 20
             break;
         }
 
-#line 19
+#line 21
         Vector<float, 3>  acc_1 = acc_0 + (Vector<float, 3> )(&kernelContext_0)->globalParams_0->val_0.Load(k_0) * (&kernelContext_0)->globalParams_0->v0_0.Load((&kernelContext_0)->globalParams_0->col_0.Load(k_0));
 
-#line 18
+#line 20
         k_0 = k_0 + 1U;
 
-#line 18
+#line 20
         acc_0 = acc_1;
 
-#line 18
+#line 20
     }
 
-    *(&((slang_bit_cast<GlobalParams_0*>(globalParams_1))->jpos_0)[i_0]) = acc_0;
+    *(&((&kernelContext_0)->globalParams_0->jpos_0)[i_0]) = acc_0;
     return;
 }
 

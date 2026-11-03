@@ -47,11 +47,11 @@ bool vk_ok(VkResult r, const char *what) {
 	return true;
 }
 
-bool make_buffer(Buf &b, size_t bytes, const void *src) {
+bool make_buffer(Buf &b, size_t bytes, const void *src, VkBufferUsageFlags usage = VK_BUFFER_USAGE_STORAGE_BUFFER_BIT) {
 	b.bytes = bytes;
 	VkBufferCreateInfo bi{ VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO };
 	bi.size = bytes;
-	bi.usage = VK_BUFFER_USAGE_STORAGE_BUFFER_BIT;
+	bi.usage = usage;
 	bi.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
 	if (!vk_ok(vkCreateBuffer(g_device, &bi, nullptr, &b.buffer), "vkCreateBuffer")) {
 		return false;
@@ -84,7 +84,10 @@ bool make_buffer(Buf &b, size_t bytes, const void *src) {
 	return true;
 }
 
+// The last of binds is the kernel's counts: a ConstantBuffer<Params> at the last binding index, the rest are storage buffers.
 bool make_kernel(Kernel &k, const std::string &path, const std::vector<const Buf *> &binds) {
+	const uint32_t last = uint32_t(binds.size()) - 1;
+	const auto type_of = [last](uint32_t i) { return i == last ? VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER : VK_DESCRIPTOR_TYPE_STORAGE_BUFFER; };
 	std::ifstream f(path, std::ios::binary);
 	std::vector<char> code((std::istreambuf_iterator<char>(f)), std::istreambuf_iterator<char>());
 	if (code.empty()) {
@@ -96,7 +99,7 @@ bool make_kernel(Kernel &k, const std::string &path, const std::vector<const Buf
 	si.pCode = reinterpret_cast<const uint32_t *>(code.data());
 	std::vector<VkDescriptorSetLayoutBinding> lb(binds.size());
 	for (uint32_t i = 0; i < binds.size(); ++i) {
-		lb[i] = { i, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1, VK_SHADER_STAGE_COMPUTE_BIT, nullptr };
+		lb[i] = { i, type_of(i), 1, VK_SHADER_STAGE_COMPUTE_BIT, nullptr };
 	}
 	VkDescriptorSetLayoutCreateInfo li{ VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO };
 	li.bindingCount = uint32_t(lb.size());
@@ -127,7 +130,7 @@ bool make_kernel(Kernel &k, const std::string &path, const std::vector<const Buf
 	std::vector<VkWriteDescriptorSet> w(binds.size());
 	for (uint32_t i = 0; i < binds.size(); ++i) {
 		info[i] = { binds[i]->buffer, 0, VK_WHOLE_SIZE };
-		w[i] = { VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET, nullptr, k.set, i, 0, 1, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, nullptr, &info[i], nullptr };
+		w[i] = { VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET, nullptr, k.set, i, 0, 1, type_of(i), nullptr, &info[i], nullptr };
 	}
 	vkUpdateDescriptorSets(g_device, uint32_t(w.size()), w.data(), 0, nullptr);
 	return true;
@@ -199,11 +202,11 @@ bool gpu_pheno_init(const char *spv_dir) {
 	VkCommandPoolCreateInfo pi{ VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO };
 	pi.queueFamilyIndex = qf;
 	pi.flags = VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT;
-	VkDescriptorPoolSize ps{ VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 64 };
+	VkDescriptorPoolSize ps[2] = { { VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 64 }, { VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 16 } };
 	VkDescriptorPoolCreateInfo dp{ VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO };
 	dp.maxSets = 8;
-	dp.poolSizeCount = 1;
-	dp.pPoolSizes = &ps;
+	dp.poolSizeCount = 2;
+	dp.pPoolSizes = ps;
 	VkFenceCreateInfo fi{ VK_STRUCTURE_TYPE_FENCE_CREATE_INFO };
 	if (!vk_ok(vkCreateCommandPool(g_device, &pi, nullptr, &g_pool), "vkCreateCommandPool") || !vk_ok(vkCreateDescriptorPool(g_device, &dp, nullptr, &g_dpool), "vkCreateDescriptorPool") ||
 			!vk_ok(vkCreateFence(g_device, &fi, nullptr, &g_fence), "vkCreateFence")) {
@@ -217,12 +220,18 @@ bool gpu_pheno_init(const char *spv_dir) {
 		return false;
 	}
 	// Buffers: the asset's bytes, and the intermediates.
+	static Buf prm_blend, prm_tet, prm_gather, prm_rbf, prm_skel; // the counts, one uniform buffer per kernel
 	static Buf templ, blend, vanny, fsrc, p3, ftet, fids, bary, crow, col, val, jpos, bsh, bw, sw, par;
 	const size_t P = PH_P, V = PH_V, J = PH_J, NFS = PH_NFS, NNZ = PH_NNZ;
 	bool ok = make_buffer(templ, P * 12, g_templ) && make_buffer(blend, size_t(PH_NB) * P * 12, g_blend) && make_buffer(g_coeffs, size_t(PH_NB) * 4, nullptr) && make_buffer(vanny, P * 12, nullptr) &&
 			make_buffer(fsrc, NFS * 12, g_F_src) && make_buffer(p3, NFS * 12, nullptr) && make_buffer(ftet, NFS * 16, g_F_tet) && make_buffer(fids, V * 4, g_fids) && make_buffer(bary, V * 16, g_bary) &&
 			make_buffer(g_v0, V * 12, nullptr) && make_buffer(crow, (J + 1) * 4, g_rbf_crow) && make_buffer(col, NNZ * 4, g_rbf_col) && make_buffer(val, NNZ * 4, g_rbf_val) && make_buffer(jpos, J * 12, nullptr) &&
 			make_buffer(bsh, V * 12, g_BSh) && make_buffer(bw, J * 64, g_BW) && make_buffer(sw, V * J * 4, g_SW) && make_buffer(par, J * 4, g_par) && make_buffer(g_outbw, J * 64, nullptr);
+	// Counts as uint32 in struct order (scalar layout), matching the emitted *Params structs.
+	const uint32_t c_blend[4] = { uint32_t(P), uint32_t(PH_NB) }, c_tet[4] = { uint32_t(NFS) }, c_gather[4] = { uint32_t(V), uint32_t(P) }, c_rbf[4] = { uint32_t(J) }, c_skel[4] = { uint32_t(J), uint32_t(V) };
+	const VkBufferUsageFlags ub = VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT;
+	ok = ok && make_buffer(prm_blend, sizeof c_blend, c_blend, ub) && make_buffer(prm_tet, sizeof c_tet, c_tet, ub) && make_buffer(prm_gather, sizeof c_gather, c_gather, ub) && make_buffer(prm_rbf, sizeof c_rbf, c_rbf, ub) &&
+			make_buffer(prm_skel, sizeof c_skel, c_skel, ub);
 	if (!ok) {
 		std::fprintf(stderr, "gpu_pheno: buffers\n");
 		return false;
@@ -233,11 +242,11 @@ bool gpu_pheno_init(const char *spv_dir) {
 		uint32_t threads;
 		std::vector<const Buf *> binds;
 	} plan[5] = {
-		{ "pheno_blendshape", uint32_t(P), { &templ, &blend, &g_coeffs, &vanny } },
-		{ "pheno_bary_tet", uint32_t(NFS), { &vanny, &fsrc, &p3 } },
-		{ "pheno_bary_gather", uint32_t(V), { &vanny, &p3, &ftet, &fids, &bary, &g_v0 } },
-		{ "pheno_rbf", uint32_t(J), { &g_v0, &crow, &col, &val, &jpos } },
-		{ "pheno_skeleton_fit", 1, { &g_v0, &bsh, &bw, &jpos, &sw, &par, &g_outbw } },
+		{ "pheno_blendshape", uint32_t(P), { &templ, &blend, &g_coeffs, &vanny, &prm_blend } },
+		{ "pheno_bary_tet", uint32_t(NFS), { &vanny, &fsrc, &p3, &prm_tet } },
+		{ "pheno_bary_gather", uint32_t(V), { &vanny, &p3, &ftet, &fids, &bary, &g_v0, &prm_gather } },
+		{ "pheno_rbf", uint32_t(J), { &g_v0, &crow, &col, &val, &jpos, &prm_rbf } },
+		{ "pheno_skeleton_fit", 1, { &g_v0, &bsh, &bw, &jpos, &sw, &par, &g_outbw, &prm_skel } },
 	};
 	for (int i = 0; i < 5; ++i) {
 		g_k[i].threads = plan[i].threads;

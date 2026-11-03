@@ -1,104 +1,98 @@
 #include "slang_rt/slang-cpp-prelude.h"
-
 #ifdef SLANG_PRELUDE_NAMESPACE
 using namespace SLANG_PRELUDE_NAMESPACE;
 #endif
 
 
-#line 24 "E:/sinew-moved/viz_native/../spec/slang/pheno_blendshape.slang"
+#line 8 "../spec/slang/pheno_blendshape.slang"
+struct BlendshapeParams_0
+{
+    uint32_t P_0;
+    uint32_t NB_0;
+};
+
+
+#line 8
 struct GlobalParams_0
 {
     StructuredBuffer<Vector<float, 3> > templ_0;
     StructuredBuffer<Vector<float, 3> > blend_0;
     StructuredBuffer<float> coeffs_0;
     RWStructuredBuffer<Vector<float, 3> > vanny_0;
+    BlendshapeParams_0* params_0;
 };
 
 
-#line 24
+#line 8
 struct KernelContext_0
 {
     GlobalParams_0* globalParams_0;
 };
 
-
-#line 11
 void _blendshape(void* _S1, void* entryPointParams_0, void* globalParams_1)
 {
 
-#line 11
+#line 13
     ComputeThreadVaryingInput * _S2 = (slang_bit_cast<ComputeThreadVaryingInput *>(_S1));
 
-#line 11
+#line 13
     KernelContext_0 kernelContext_0;
 
-#line 11
+#line 13
     (&kernelContext_0)->globalParams_0 = (slang_bit_cast<GlobalParams_0*>(globalParams_1));
 
     uint32_t p_0 = (_S2->groupID * Vector<uint32_t, 3> (64U, 1U, 1U) + _S2->groupThreadID).x;
-    uint _elementCount_0;
-    uint _stride_0;
-    (slang_bit_cast<GlobalParams_0*>(globalParams_1))->templ_0.GetDimensions(&_elementCount_0, &_stride_0);
-    Vector<uint32_t, 2>  _S3 = uint2(_elementCount_0, _stride_0);
-
-#line 14
-    uint32_t P_0 = _S3.x;
-    if(p_0 >= P_0)
-    {
-
-#line 15
-        return;
-    }
-
-#line 16
-    uint _elementCount_1;
-    uint _stride_1;
-    (&kernelContext_0)->globalParams_0->coeffs_0.GetDimensions(&_elementCount_1, &_stride_1);
-    Vector<uint32_t, 2>  _S4 = uint2(_elementCount_1, _stride_1);
-
-#line 16
-    uint32_t _S5 = _S4.x;
-    Vector<float, 3>  _S6 = (slang_bit_cast<GlobalParams_0*>(globalParams_1))->templ_0.Load(p_0);
-
-#line 17
-    uint32_t c_0 = 0U;
-
-#line 17
-    Vector<float, 3>  acc_0 = _S6;
-    for(;;)
+    uint32_t P_1 = (slang_bit_cast<GlobalParams_0*>(globalParams_1))->params_0->P_0;
+    uint32_t _S3 = (slang_bit_cast<GlobalParams_0*>(globalParams_1))->params_0->NB_0;
+    if(p_0 >= ((slang_bit_cast<GlobalParams_0*>(globalParams_1))->params_0->P_0))
     {
 
 #line 18
-        if(c_0 < _S5)
+        return;
+    }
+
+#line 19
+    Vector<float, 3>  _S4 = (&kernelContext_0)->globalParams_0->templ_0.Load(p_0);
+
+#line 19
+    uint32_t c_0 = 0U;
+
+#line 19
+    Vector<float, 3>  acc_0 = _S4;
+    for(;;)
+    {
+
+#line 20
+        if(c_0 < _S3)
         {
         }
         else
         {
 
-#line 18
+#line 20
             break;
         }
         float w_0 = (&kernelContext_0)->globalParams_0->coeffs_0.Load(c_0);
         if(w_0 == 0.0f)
         {
 
-#line 21
+#line 23
             c_0 = c_0 + 1U;
 
-#line 18
+#line 20
             continue;
         }
 
-#line 18
-        acc_0 = acc_0 + (Vector<float, 3> )w_0 * (&kernelContext_0)->globalParams_0->blend_0.Load(c_0 * P_0 + p_0);
+#line 20
+        acc_0 = acc_0 + (Vector<float, 3> )w_0 * (&kernelContext_0)->globalParams_0->blend_0.Load(c_0 * P_1 + p_0);
 
-#line 18
+#line 20
         c_0 = c_0 + 1U;
 
-#line 18
+#line 20
     }
 
-#line 24
+#line 26
     *(&((&kernelContext_0)->globalParams_0->vanny_0)[p_0]) = acc_0;
     return;
 }
