@@ -1079,6 +1079,15 @@ namespace polyfem {
 
             if (!out_folder.empty())
                 io::OBJWriter::write_with_groups(out_folder + "/intersecting_pair.obj", pair_data);
+            // CLOTHFIT_ALLOW_INITIAL_INTERSECTIONS=1: warn and continue. The barrier keeps its
+            // precondition only for the pairs that are clear; the intersecting pairs are not repaired.
+            if (std::getenv("CLOTHFIT_ALLOW_INITIAL_INTERSECTIONS") != nullptr)
+            {
+                logger().warn("initial solution has intersections (edge {} {}, face {} {} {}); continuing because CLOTHFIT_ALLOW_INITIAL_INTERSECTIONS is set",
+                              ids[0], ids[1], ids[2], ids[3], ids[4]);
+                return;
+            }
+            logger().error("intersecting pair: edge {} {}, face {} {} {} (0-based vertex ids)", ids[0], ids[1], ids[2], ids[3], ids[4]);
             log_and_throw_error("Unable to solve, initial solution has intersections!");
         }
     }
