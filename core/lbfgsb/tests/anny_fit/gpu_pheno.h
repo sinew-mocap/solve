@@ -7,4 +7,6 @@
 bool gpu_pheno_init(const char *spv_dir);
 // Same arguments and outputs as pheno_eval. pheno_load must have run.
 void gpu_pheno_eval(const float ident[11], float *v0, float *bw);
+// With the local-change sliders (PH_NLOC values, null for none).
+void gpu_pheno_eval_local(const float ident[11], const float *local, float *v0, float *bw);
 void gpu_pheno_shutdown();

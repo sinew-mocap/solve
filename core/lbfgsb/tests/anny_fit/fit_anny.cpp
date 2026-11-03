@@ -34,9 +34,13 @@ struct Seg {
 	int a, b;
 	double len;
 };
-static const int N = 11;
+static int N = 11;                // 11 phenotype values, then the free local-change sliders
+static std::vector<int> g_free;   // slider index of variable 11 + j
+static const double SLIDER_LAMBDA = 2e-3;
 static const double LAMBDA = 1e-4;
 static const double HUBER = 0.25;   // pseudo-Huber scale on the relative error: quadratic below 25%, linear beyond
+static bool g_on_gpu = false;   // ANNY_GPU=1 and ANNY_SPV: the fit's objective runs the phenotype kernels as SPIR-V
+static std::vector<std::string> g_labels;
 static std::vector<float> g_v(PH_V * 3), g_bw(PH_J * 16);
 
 static double seglen(const Seg &s) {
@@ -55,24 +59,36 @@ static double score(const float *x, const std::vector<Seg> &segs, std::vector<do
 			rel->push_back(r);
 		}
 	}
-	for (int i = 0; i < N; ++i) {
+	for (int i = 0; i < 11; ++i) {
 		f += LAMBDA * (x[i] - 0.5) * (x[i] - 0.5);
+	}
+	for (int i = 11; i < N; ++i) {
+		f += SLIDER_LAMBDA * x[i] * x[i];
 	}
 	return f;
 }
 static double objective(const float *x, const std::vector<Seg> &segs, std::vector<double> *rel = nullptr) {
-	pheno_eval(x, g_v.data(), g_bw.data());
+	std::vector<float> local(PH_NLOC, 0.0f);
+	for (size_t j = 0; j < g_free.size(); ++j) {
+		local[g_free[j]] = x[11 + j];
+	}
+#ifdef ANNY_GPU
+	if (g_on_gpu) {
+		gpu_pheno_eval_local(x, local.data(), g_v.data(), g_bw.data());
+		return score(x, segs, rel);
+	}
+#endif
+	pheno_eval_local(x, local.data(), g_v.data(), g_bw.data());
 	return score(x, segs, rel);
 }
 static void gradient(const float *x, const std::vector<Seg> &segs, float *g) {
 	const double h = 1e-3;
 	for (int i = 0; i < N; ++i) {
-		float xp[N], xm[N];
-		std::copy(x, x + N, xp);
-		std::copy(x, x + N, xm);
+		std::vector<float> xp(x, x + N), xm(x, x + N);
+		const float lo = i < 11 ? 0.0f : -1.0f;
 		xp[i] = std::min(1.0f, x[i] + float(h));
-		xm[i] = std::max(0.0f, x[i] - float(h));
-		g[i] = float((objective(xp, segs) - objective(xm, segs)) / (xp[i] - xm[i]));
+		xm[i] = std::max(lo, x[i] - float(h));
+		g[i] = float((objective(xp.data(), segs) - objective(xm.data(), segs)) / (xp[i] - xm[i]));
 	}
 }
 struct Fit {
@@ -90,6 +106,10 @@ static Fit fit(const std::vector<Seg> &segs) {
 	p.max_iterations = 200;
 	p.epsilon = 1e-4;
 	std::vector<float> x0(N, 0.5f), lb(N, 0.0f), ub(N, 1.0f), x(N), g(N);
+	for (int i = 11; i < N; ++i) {
+		x0[i] = 0.0f;
+		lb[i] = -1.0f;
+	}
 	r.f0 = objective(x0.data(), segs);
 	Lbfgsb::Status st = solver.start(N, x0.data(), lb.data(), ub.data(), p);
 	double f = r.f0;
@@ -146,6 +166,37 @@ int main(int argc, char **argv) {
 		std::printf("G1 golden phenotype: mesh max error %.2e m, bind skeleton %.2e: %s\n", ev, eb, ok ? "PASS" : "FAIL");
 		rc |= ok ? 0 : 1;
 	}
+	{ // the sliders to free: ANNY_SLIDERS=substring,substring (labels containing any of them); none: the 11 phenotype values only
+		std::ifstream lf(argc > 4 ? argv[4] : "");
+		std::string l;
+		std::vector<bool> soma_keeps;
+		while (std::getline(lf, l)) {
+			const size_t tab = l.find('\t');
+			soma_keeps.push_back(tab == std::string::npos || l[tab + 1] == '1');
+			g_labels.push_back(l.substr(0, tab));
+		}
+		const bool narrow = std::getenv("ANNY_SOMA_NARROW") != nullptr; // narrow at the SOMA-X stage: only the sliders SOMA-X keeps
+		const char *want = std::getenv("ANNY_SLIDERS");
+		std::vector<std::string> keys;
+		for (std::istringstream is(want ? want : ""); std::getline(is, l, ',');) {
+			keys.push_back(l);
+		}
+		for (size_t i = 0; i < g_labels.size() && int(i) < PH_NLOC; ++i) {
+			for (const std::string &k : keys) {
+				if (g_labels[i].find(k) != std::string::npos && (!narrow || soma_keeps[i])) {
+					g_free.push_back(int(i));
+					break;
+				}
+			}
+		}
+		N = 11 + int(g_free.size());
+	}
+#ifdef ANNY_GPU
+	if (std::getenv("ANNY_GPU") && std::getenv("ANNY_SPV")) {
+		g_on_gpu = gpu_pheno_init(std::getenv("ANNY_SPV"));
+		std::printf("fit objective on the GPU (SPIR-V): %s\n", g_on_gpu ? "yes" : "NO, no device or kernels: CPU");
+	}
+#endif
 	std::vector<Seg> segs;
 	{
 		std::ifstream tf(argv[3]);
@@ -161,12 +212,15 @@ int main(int argc, char **argv) {
 	Fit base = fit(segs);
 	std::vector<double> rel0, rel1;
 	std::vector<float> mean(N, 0.5f);
+	for (int i = 11; i < N; ++i) {
+		mean[i] = 0.0f;
+	}
 	objective(mean.data(), segs, &rel0);
 	objective(base.x.data(), segs, &rel1);
-	const char *names[N] = { "gender", "age", "muscle", "weight", "height", "proportions", "cupsize", "firmness", "african", "asian", "caucasian" };
+	const char *names[11] = { "gender", "age", "muscle", "weight", "height", "proportions", "cupsize", "firmness", "african", "asian", "caucasian" };
 	std::printf("fit: %d iterations, %d evaluations, %s; objective %.5f -> %.5f\n", base.iterations, base.nfev, base.reason.c_str(), base.f0, base.f);
 	int at_bound = 0;
-	for (int i = 0; i < N; ++i) {
+	for (int i = 0; i < 11; ++i) {
 		const bool b = base.x[i] < 1e-4f || base.x[i] > 1 - 1e-4f;
 		at_bound += b;
 		std::printf("  %-12s %.4f%s\n", names[i], base.x[i], b ? "  <- at a bound" : "");
@@ -175,7 +229,15 @@ int main(int argc, char **argv) {
 	for (size_t i = 0; i < segs.size(); ++i) {
 		std::printf("  %-16s target %.4f m  %+6.1f%% -> %+6.1f%%\n", segs[i].name.c_str(), segs[i].len, 100 * rel0[i], 100 * rel1[i]);
 	}
-	std::printf("saturation: %d of %d phenotype values at a bound\n", at_bound, N);
+	std::printf("saturation: %d of 11 phenotype values at a bound\n", at_bound);
+	int sat_slider = 0;
+	for (int i = 11; i < N; ++i) {
+		sat_slider += std::fabs(base.x[i]) > 1.0f - 1e-4f;
+		if (std::fabs(base.x[i]) > 0.02f) {
+			std::printf("  slider %-40s %+.3f\n", g_labels[g_free[i - 11]].c_str(), base.x[i]);
+		}
+	}
+	std::printf("sliders: %d free, %d at a bound\n", N - 11, sat_slider);
 	const bool g2 = base.f < base.f0 && (base.converged || base.iterations > 0);
 	std::printf("G2 residual falls (%.5f -> %.5f) and the solver finished (%s): %s\n", base.f0, base.f, base.reason.c_str(), g2 ? "PASS" : "FAIL");
 	rc |= g2 ? 0 : 1;
@@ -185,7 +247,10 @@ int main(int argc, char **argv) {
 			s.len *= 1.10;
 		}
 		Fit alt = fit(longer);
-		const double moved = std::fabs(alt.x[4] - base.x[4]) + std::fabs(alt.x[5] - base.x[5]) + std::fabs(alt.x[0] - base.x[0]);
+		double moved = 0.0; // over every variable: with sliders free, longer targets can be taken by a slider and not by the phenotype
+		for (int i = 0; i < N; ++i) {
+			moved += std::fabs(alt.x[i] - base.x[i]);
+		}
 		const double f_alt_on_real = objective(alt.x.data(), segs);
 		const bool ok = f_alt_on_real > base.f * 1.02 && moved > 1e-3;
 		std::printf("G3 control, targets +10%%: fit moved %.3f, residual on the real targets %.5f against %.5f: %s\n", moved, f_alt_on_real, base.f, ok ? "PASS" : "FAIL");
@@ -198,6 +263,9 @@ int main(int argc, char **argv) {
 			std::printf("G4 GPU: no device or kernels (set ANNY_SPV to the spv directory): SKIPPED\n");
 		} else {
 			std::vector<std::vector<float>> idents = { std::vector<float>(N, 0.5f), base.x };
+			for (std::vector<float> &id : idents) {
+				std::fill(id.begin() + 11, id.end(), 0.0f); // the GPU kernels here run the phenotype basis; sliders at 0
+			}
 			unsigned seed = 12345;
 			for (int k = 0; k < 4; ++k) {
 				std::vector<float> r(N);
@@ -205,6 +273,7 @@ int main(int argc, char **argv) {
 					seed = seed * 1664525u + 1013904223u;
 					r[i] = float((seed >> 8) & 0xFFFF) / 65535.0f;
 				}
+				std::fill(r.begin() + 11, r.end(), 0.0f);
 				idents.push_back(r);
 			}
 			double worst_v = 0, worst_b = 0, worst_f = 0;
