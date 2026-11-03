@@ -248,8 +248,8 @@ bool gpu_pheno_init(const char *spv_dir) {
 	return true;
 }
 
-void gpu_pheno_eval(const float ident[11], float *v0, float *bw) {
-	pheno_coefficients(ident, static_cast<float *>(g_coeffs.mapped));
+void gpu_pheno_eval_local(const float ident[11], const float *local, float *v0, float *bw) {
+	pheno_weights(ident, local, static_cast<float *>(g_coeffs.mapped));
 	VkCommandBufferBeginInfo bi{ VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO };
 	vkResetCommandBuffer(g_cmd, 0);
 	vkBeginCommandBuffer(g_cmd, &bi);
@@ -269,6 +269,10 @@ void gpu_pheno_eval(const float ident[11], float *v0, float *bw) {
 	vkWaitForFences(g_device, 1, &g_fence, VK_TRUE, UINT64_MAX);
 	std::memcpy(v0, g_v0.mapped, size_t(PH_V) * 12);
 	std::memcpy(bw, g_outbw.mapped, size_t(PH_J) * 64);
+}
+
+void gpu_pheno_eval(const float ident[11], float *v0, float *bw) {
+	gpu_pheno_eval_local(ident, nullptr, v0, bw);
 }
 
 void gpu_pheno_shutdown() {

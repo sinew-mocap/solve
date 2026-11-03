@@ -115,6 +115,9 @@ static void interp(float v, const float *a, int n, float *w) {
 
 // The 624 blendshape weights of an 11-value phenotype: per-feature anchor interpolation, then the multilinear mask.
 extern "C" void pheno_coefficients(const float ident[11], float *wi) {
+	for (int k = 0; k < PH_NB; k++) {
+		wi[k] = 0.f;
+	}
 	float wg[2], wa[5], wm[3], ww[3], wh[2], wp[2], wc[3], wfm[3];
 	interp(ident[0], ANC_2, 2, wg);
 	interp(ident[1], ANC_age, 5, wa);
@@ -162,7 +165,7 @@ extern "C" void pheno_coefficients(const float ident[11], float *wi) {
 	for (int i = 0; i < 3; i++) {
 		phens[o++] = wfm[i];
 	}
-	for (int k = 0; k < PH_NB; k++) {
+	for (int k = 0; k < PH_NPH; k++) {
 		float pr = 1.f;
 		const float *mr = g_mask + k * PH_NVAR;
 		for (int j = 0; j < PH_NVAR; j++) {
@@ -173,9 +176,23 @@ extern "C" void pheno_coefficients(const float ident[11], float *wi) {
 
 }
 
+// The local-change sliders (ANNY local_change_labels, each in [-1, 1]) enter after the 624 phenotype weights, the positive and the
+// negative part of each slider as its own weight (relu(v) and relu(-v)), as ANNY does.
+extern "C" void pheno_eval_local(const float ident[11], const float *local, float *v0, float *bw);
 extern "C" void pheno_eval(const float ident[11], float *v0, float *bw) {
-	static float wi[PH_NB];
+	pheno_eval_local(ident, nullptr, v0, bw);
+}
+// All PH_NB blendshape weights: the 624 phenotype ones, then relu(v) and relu(-v) of each local-change slider (local may be null).
+extern "C" void pheno_weights(const float ident[11], const float *local, float *wi) {
 	pheno_coefficients(ident, wi);
+	for (int i = 0; local && i < PH_NLOC; i++) {
+		wi[PH_NPH + 2 * i] = local[i] > 0.f ? local[i] : 0.f;
+		wi[PH_NPH + 2 * i + 1] = local[i] < 0.f ? -local[i] : 0.f;
+	}
+}
+extern "C" void pheno_eval_local(const float ident[11], const float *local, float *v0, float *bw) {
+	static float wi[PH_NB];
+	pheno_weights(ident, local, wi);
 	{  // blendshape → vanny
 		using namespace kblend;
 		GlobalParams_0 gp{};
