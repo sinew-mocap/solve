@@ -18,6 +18,18 @@ from soma import SOMALayer
 OUT_BIN, OUT_H, OUT_GOLD = "viewer/assets/soma_pheno.bin", "solve/core/soma_pheno.h", "viewer/assets/soma_pheno_golden.bin"
 
 
+def effective_blend(am):
+    """The 624 phenotype blendshapes the host sums with its 624 weights. A compact ANNY (phenotype_blendshape_projection,
+    624 x n) keeps only n of them and the model uses wi @ projection as coefficients of those n, so the 624 weights
+    scale rows of projection @ blendshapes[:n]."""
+    proj = getattr(am, "phenotype_blendshape_projection", None)
+    if proj is None:
+        return am.blendshapes[:624]
+    n = proj.shape[1]
+    b = am.blendshapes[:n]
+    return (proj @ b.reshape(n, -1)).reshape(proj.shape[0], *b.shape[1:])
+
+
 def main():
     L = SOMALayer(identity_model_type="anny", device="cpu", mode="torch",
                   enable_procedural_transforms=False).eval()
@@ -26,7 +38,7 @@ def main():
 
     arrays = {
         "template": am.template_vertices.numpy().astype(np.float32),       # (P,3)
-        "blend":    am.blendshapes[:624].numpy().astype(np.float32),       # (624,P,3)
+        "blend":    effective_blend(am).numpy().astype(np.float32),       # (624,P,3)
         "mask":     am.stacked_phenotype_blend_shapes_mask.numpy().astype(np.float32),  # (624,26)
         "F_src":    bi.F_src_torch.numpy().astype(np.int32),               # (NFS,3)
         "F_tet":    bi.F_src_tet.numpy().astype(np.int32),                 # (NFS,4)
