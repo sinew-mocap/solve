@@ -113,7 +113,8 @@ static void interp(float v, const float *a, int n, float *w) {
 	w[idx] = al;
 }
 
-extern "C" void pheno_eval(const float ident[11], float *v0, float *bw) {
+// The 624 blendshape weights of an 11-value phenotype: per-feature anchor interpolation, then the multilinear mask.
+extern "C" void pheno_coefficients(const float ident[11], float *wi) {
 	float wg[2], wa[5], wm[3], ww[3], wh[2], wp[2], wc[3], wfm[3];
 	interp(ident[0], ANC_2, 2, wg);
 	interp(ident[1], ANC_age, 5, wa);
@@ -161,7 +162,6 @@ extern "C" void pheno_eval(const float ident[11], float *v0, float *bw) {
 	for (int i = 0; i < 3; i++) {
 		phens[o++] = wfm[i];
 	}
-	static float wi[PH_NB];
 	for (int k = 0; k < PH_NB; k++) {
 		float pr = 1.f;
 		const float *mr = g_mask + k * PH_NVAR;
@@ -171,6 +171,11 @@ extern "C" void pheno_eval(const float ident[11], float *v0, float *bw) {
 		wi[k] = pr;
 	}
 
+}
+
+extern "C" void pheno_eval(const float ident[11], float *v0, float *bw) {
+	static float wi[PH_NB];
+	pheno_coefficients(ident, wi);
 	{  // blendshape → vanny
 		using namespace kblend;
 		GlobalParams_0 gp{};

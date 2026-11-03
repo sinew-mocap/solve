@@ -25,6 +25,9 @@
 #include "soma_pheno.h"
 #include "soma_pheno_api.h"
 #include "vec_cpu.h"
+#ifdef ANNY_GPU
+#include "gpu_pheno.h"
+#endif
 
 struct Seg {
 	std::string name;
@@ -40,8 +43,7 @@ static double seglen(const Seg &s) {
 	const float *A = &g_bw[s.a * 16], *B = &g_bw[s.b * 16];
 	return std::sqrt(double(A[3] - B[3]) * (A[3] - B[3]) + double(A[7] - B[7]) * (A[7] - B[7]) + double(A[11] - B[11]) * (A[11] - B[11]));
 }
-static double objective(const float *x, const std::vector<Seg> &segs, std::vector<double> *rel = nullptr) {
-	pheno_eval(x, g_v.data(), g_bw.data());
+static double score(const float *x, const std::vector<Seg> &segs, std::vector<double> *rel) {
 	double f = 0.0;
 	if (rel) {
 		rel->clear();
@@ -57,6 +59,10 @@ static double objective(const float *x, const std::vector<Seg> &segs, std::vecto
 		f += LAMBDA * (x[i] - 0.5) * (x[i] - 0.5);
 	}
 	return f;
+}
+static double objective(const float *x, const std::vector<Seg> &segs, std::vector<double> *rel = nullptr) {
+	pheno_eval(x, g_v.data(), g_bw.data());
+	return score(x, segs, rel);
 }
 static void gradient(const float *x, const std::vector<Seg> &segs, float *g) {
 	const double h = 1e-3;
@@ -185,5 +191,56 @@ int main(int argc, char **argv) {
 		std::printf("G3 control, targets +10%%: fit moved %.3f, residual on the real targets %.5f against %.5f: %s\n", moved, f_alt_on_real, base.f, ok ? "PASS" : "FAIL");
 		rc |= ok ? 0 : 1;
 	}
+#ifdef ANNY_GPU
+	{ // G4: the five kernels as SPIR-V give the CPU's mesh, skeleton and objective. Tolerances: 1e-4 m, 1e-4 relative on the objective.
+		const char *spv = std::getenv("ANNY_SPV");
+		if (!spv || !gpu_pheno_init(spv)) {
+			std::printf("G4 GPU: no device or kernels (set ANNY_SPV to the spv directory): SKIPPED\n");
+		} else {
+			std::vector<std::vector<float>> idents = { std::vector<float>(N, 0.5f), base.x };
+			unsigned seed = 12345;
+			for (int k = 0; k < 4; ++k) {
+				std::vector<float> r(N);
+				for (int i = 0; i < N; ++i) {
+					seed = seed * 1664525u + 1013904223u;
+					r[i] = float((seed >> 8) & 0xFFFF) / 65535.0f;
+				}
+				idents.push_back(r);
+			}
+			double worst_v = 0, worst_b = 0, worst_f = 0;
+			std::vector<float> gv(PH_V * 3), gb(PH_J * 16);
+			for (const std::vector<float> &id : idents) {
+				const double fc = objective(id.data(), segs);
+				const std::vector<float> cv = g_v, cb = g_bw;
+				gpu_pheno_eval(id.data(), gv.data(), gb.data());
+				g_bw = gb;
+				const double fg = score(id.data(), segs, nullptr);
+				for (int i = 0; i < PH_V * 3; ++i) {
+					worst_v = std::max(worst_v, double(std::fabs(gv[i] - cv[i])));
+				}
+				for (int i = 0; i < PH_J * 16; ++i) {
+					worst_b = std::max(worst_b, double(std::fabs(gb[i] - cb[i])));
+				}
+				worst_f = std::max(worst_f, std::fabs(fc - fg) / std::max(std::fabs(fc), 1e-9));
+			}
+			const bool ok = worst_v < 1e-4 && worst_b < 1e-4 && worst_f < 1e-4;
+			std::printf("G4 GPU (SPIR-V) against CPU on %zu phenotypes: mesh max %.2e m, skeleton max %.2e, objective relative %.2e: %s\n", idents.size(), worst_v, worst_b, worst_f, ok ? "PASS" : "FAIL");
+			rc |= ok ? 0 : 1;
+			{ // control: a phenotype nudged by 0.05 must show as a different objective
+				std::vector<float> nudged = base.x;
+				nudged[4] = std::min(1.0f, nudged[4] + 0.05f);
+				nudged[0] = std::max(0.0f, nudged[0] - 0.05f);
+				const double fc = objective(base.x.data(), segs);
+				gpu_pheno_eval(nudged.data(), gv.data(), gb.data());
+				g_bw = gb;
+				const double fn = score(nudged.data(), segs, nullptr);
+				const bool seen = std::fabs(fc - fn) / std::max(std::fabs(fc), 1e-9) > 1e-3;
+				std::printf("G4 control, phenotype nudged by 0.05: objective differs by %.2e relative (must exceed 1e-3): %s\n", std::fabs(fc - fn) / std::max(std::fabs(fc), 1e-9), seen ? "PASS" : "FAIL");
+				rc |= seen ? 0 : 1;
+			}
+			gpu_pheno_shutdown();
+		}
+	}
+#endif
 	return rc;
 }
