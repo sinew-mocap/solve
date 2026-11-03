@@ -124,10 +124,18 @@ int main(int argc, char **argv) {
 		gf.read(reinterpret_cast<char *>(gold.data()), gold.size() * sizeof(float));
 		pheno_eval(gold.data(), g_v.data(), g_bw.data());
 		double ev = 0, eb = 0;
-		for (int i = 0; i < PH_V * 3; ++i) ev = std::max(ev, double(std::fabs(g_v[i] - gold[11 + i])));
-		for (int i = 0; i < PH_J * 16; ++i) eb = std::max(eb, double(std::fabs(g_bw[i] - gold[11 + PH_V * 3 + i])));
+		for (int i = 0; i < PH_V * 3; ++i) {
+			ev = std::max(ev, double(std::fabs(g_v[i] - gold[11 + i])));
+		}
+		for (int i = 0; i < PH_J * 16; ++i) {
+			eb = std::max(eb, double(std::fabs(g_bw[i] - gold[11 + PH_V * 3 + i])));
+		}
 		std::printf("   sample v0[0..2] eval %.4f %.4f %.4f  golden %.4f %.4f %.4f; hips y eval %.4f golden %.4f\n", g_v[0], g_v[1], g_v[2], gold[11], gold[12], gold[13], g_bw[16 + 7], gold[11 + PH_V * 3 + 16 + 7]);
-		if (const char *dump = std::getenv("DUMP_EVAL")) { std::ofstream o(dump, std::ios::binary); o.write(reinterpret_cast<const char *>(g_v.data()), g_v.size() * 4); o.write(reinterpret_cast<const char *>(g_bw.data()), g_bw.size() * 4); }
+		if (const char *dump = std::getenv("DUMP_EVAL")) {
+			std::ofstream o(dump, std::ios::binary);
+			o.write(reinterpret_cast<const char *>(g_v.data()), g_v.size() * 4);
+			o.write(reinterpret_cast<const char *>(g_bw.data()), g_bw.size() * 4);
+		}
 		const bool ok = gf.good() && ev < 1e-3 && eb < 1e-3;
 		std::printf("G1 golden phenotype: mesh max error %.2e m, bind skeleton %.2e: %s\n", ev, eb, ok ? "PASS" : "FAIL");
 		rc |= ok ? 0 : 1;
@@ -139,7 +147,9 @@ int main(int argc, char **argv) {
 		while (std::getline(tf, line)) {
 			std::istringstream is(line);
 			Seg s;
-			if (is >> s.name >> s.a >> s.b >> s.len) segs.push_back(s);
+			if (is >> s.name >> s.a >> s.b >> s.len) {
+				segs.push_back(s);
+			}
 		}
 	}
 	Fit base = fit(segs);
@@ -156,14 +166,18 @@ int main(int argc, char **argv) {
 		std::printf("  %-12s %.4f%s\n", names[i], base.x[i], b ? "  <- at a bound" : "");
 	}
 	std::printf("segments (relative error: mean body -> fit):\n");
-	for (size_t i = 0; i < segs.size(); ++i) std::printf("  %-16s target %.4f m  %+6.1f%% -> %+6.1f%%\n", segs[i].name.c_str(), segs[i].len, 100 * rel0[i], 100 * rel1[i]);
+	for (size_t i = 0; i < segs.size(); ++i) {
+		std::printf("  %-16s target %.4f m  %+6.1f%% -> %+6.1f%%\n", segs[i].name.c_str(), segs[i].len, 100 * rel0[i], 100 * rel1[i]);
+	}
 	std::printf("saturation: %d of %d phenotype values at a bound\n", at_bound, N);
 	const bool g2 = base.f < base.f0 && (base.converged || base.iterations > 0);
 	std::printf("G2 residual falls (%.5f -> %.5f) and the solver finished (%s): %s\n", base.f0, base.f, base.reason.c_str(), g2 ? "PASS" : "FAIL");
 	rc |= g2 ? 0 : 1;
 	{ // G3 control: targets 10% longer must move the fit, and the moved fit must do worse on the real targets
 		std::vector<Seg> longer = segs;
-		for (Seg &s : longer) s.len *= 1.10;
+		for (Seg &s : longer) {
+			s.len *= 1.10;
+		}
 		Fit alt = fit(longer);
 		const double moved = std::fabs(alt.x[4] - base.x[4]) + std::fabs(alt.x[5] - base.x[5]) + std::fabs(alt.x[0] - base.x[0]);
 		const double f_alt_on_real = objective(alt.x.data(), segs);
